@@ -1,7 +1,7 @@
 # Job Watcher
 
 Sends a push notification to your phone within about 15 to 30 minutes of a new
-**Data Analyst / Business Analyst** job being posted in the USA, filtered for
+**Software / Java / Frontend / Data / DevOps Engineer** job being posted in the USA, filtered for
 0 to 3 years of experience and visa sponsorship. Runs free on GitHub Actions,
 so your laptop can be off.
 
@@ -11,7 +11,7 @@ so your laptop can be off.
 |---|---|
 | 1 | Every 15 minutes GitHub runs `watcher.py` |
 | 2 | It pulls jobs posted since the last search (at least 2 hours, at most 48) from Indeed, LinkedIn, Google Jobs, ZipRecruiter and Glassdoor |
-| 3 | Keeps analyst titles; drops Principal, Lead, Manager, Intern, III/IV, clearance |
+| 3 | Keeps engineer titles matching the 5 resumes; drops Principal, Lead, Manager, Intern, III/IV, clearance |
 | 4 | Drops jobs asking for more than 3 years of experience |
 | 5 | Drops postings that say "no sponsorship", "US citizen only", "clearance required" |
 | 6 | Keeps postings that mention sponsorship (HIGH) or come from a known H-1B sponsor in `sponsors.txt` (KNOWN) |
@@ -26,21 +26,21 @@ The very first run does not alert. It saves current jobs and sends one
 Each alert says which of the 5 resumes to use, for example:
 
 ```
-Use: Geospatial Analyst resume
+Use: Data-Engineer resume
 Capital One
 McLean, VA
 Known H-1B sponsor | 2+ yrs exp
-Skills matched (6): GIS, ArcGIS, Python, SQL, spatial, imagery
+Skills matched (5): ETL, Spark, Python, SQL, Airflow
 via linkedin
 ```
 
-| Resume | Searched as | Title examples |
+| Resume (folder in career-ops/resume-generation) | Searched as | Title examples |
 |---|---|---|
-| Data Analyst | data analyst | Data Analyst, Product Analyst, Operations Analyst |
-| Business Analyst | business analyst | Business Analyst, Business Operations Analyst |
-| Business Intelligence Analyst | business intelligence analyst | BI Analyst, Power BI Analyst, Reporting Analyst |
-| Data Quality : Governance | data quality analyst, data governance analyst | Data Quality Analyst, Data Steward |
-| Geospatial Analyst | GIS analyst, geospatial analyst | GIS Analyst, Remote Sensing Analyst |
+| devops-engineer | devops engineer, site reliability engineer | DevOps, SRE, Platform, Cloud Engineer |
+| Data-Engineer | data engineer | Data Engineer, ETL Developer, Analytics Engineer |
+| frontend | frontend engineer, react developer | Frontend, UI Engineer, React Developer |
+| java-developer | java developer | Java Developer, Backend Engineer |
+| software enginner | software engineer, full stack developer | Software Engineer, Full Stack, AI Engineer |
 
 The resume is chosen by title match plus how many of that resume's skills
 appear in the description. Jobs whose description matches fewer than
@@ -52,7 +52,7 @@ appear in the description. Jobs whose description matches fewer than
 ### A. Phone app
 
 1. Install **ntfy** on your phone (App Store or Google Play, free).
-2. Pick a secret topic name nobody can guess, for example `manoj-jobs-7f3k9q2x`.
+2. Pick a secret topic name nobody can guess, for example `karthik-jobs-7f3k9q2x`.
    Anyone who knows the topic name can read it, so do not use something simple.
 3. In the app, tap **+**, enter the topic name, server `ntfy.sh`, and subscribe.
 
@@ -72,7 +72,7 @@ appear in the description. Jobs whose description matches fewer than
    git add .
    git commit -m "Job watcher"
    git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/job-watcher.git
+   git remote add origin https://github.com/Karthik-MP/job-watcher.git
    git push -u origin main
    ```
 
@@ -117,7 +117,7 @@ external timer to start the workflow every 15 minutes:
    - Repository access: Only select repositories > `job-watcher`
    - Permissions > Repository > Actions: Read and write
 2. Sign up at https://cron-job.org and create a cron job:
-   - URL: `https://api.github.com/repos/manojabanakar/job-watcher/actions/workflows/watch.yml/dispatches`
+   - URL: `https://api.github.com/repos/Karthik-MP/job-watcher/actions/workflows/watch.yml/dispatches`
    - Schedule: every 15 minutes
    - Advanced > Request method: `POST`
    - Headers: `Accept: application/vnd.github+json`, `Authorization: Bearer <token>`, `X-GitHub-Api-Version: 2022-11-28`

@@ -24,15 +24,15 @@ def test_known_sponsor_prefix_match():
 
 
 def test_titles():
-    assert w.title_ok("Data Analyst")
-    assert w.title_ok("Senior Data Analyst - US Card")
-    assert w.title_ok("Business Intelligence Analyst II")
-    assert not w.title_ok("Principal Data Analyst")
-    assert not w.title_ok("Data Analyst III")
-    assert not w.title_ok("Data Analytics Manager")
-    assert not w.title_ok("Data Analyst Intern")
-    assert not w.title_ok("Software Engineer")
-    assert not w.title_ok("Lead Business Analyst")
+    assert w.title_ok("Software Engineer")
+    assert w.title_ok("Senior Software Engineer - Payments")
+    assert w.title_ok("Software Engineer II")
+    assert not w.title_ok("Principal Software Engineer")
+    assert not w.title_ok("Software Engineer III")
+    assert not w.title_ok("Engineering Manager")
+    assert not w.title_ok("Software Engineer Intern")
+    assert not w.title_ok("Data Analyst")
+    assert not w.title_ok("Lead Java Developer")
 
 
 def test_years():
@@ -79,7 +79,7 @@ def test_full_run(tmp_path, monkeypatch):
     pushes = []
     monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="": pushes.append((title, msg, click_url)) or True)
 
-    batch1 = [make_job("Data Analyst", "Capital One", "2+ years experience")]
+    batch1 = [make_job("Software Engineer", "Capital One", "2+ years experience")]
     monkeypatch.setattr(w, "scrape_all", lambda *a, **k: batch1)
     monkeypatch.setattr("sys.argv", ["watcher.py"])
     assert w.main() == 0
@@ -88,19 +88,19 @@ def test_full_run(tmp_path, monkeypatch):
 
     pushes.clear()
     batch2 = batch1 + [
-        make_job("Senior Data Analyst", "Amazon Web Services, Inc.", "1+ years of experience", site="linkedin"),
-        make_job("Business Analyst", "Acme Corp", "Visa sponsorship is available. 2 years experience"),
-        make_job("Data Analyst", "Defense Co", "Active Secret clearance required"),
-        make_job("Data Analyst", "Big Bank", "5+ years of experience required"),
-        make_job("Principal Data Analyst", "Capital One", ""),
-        make_job("Data Analyst", "Unknown LLC", "Nice team"),
+        make_job("Senior Software Engineer", "Amazon Web Services, Inc.", "1+ years of experience", site="linkedin"),
+        make_job("Java Developer", "Acme Corp", "Visa sponsorship is available. 2 years experience"),
+        make_job("Software Engineer", "Defense Co", "Active Secret clearance required"),
+        make_job("Software Engineer", "Big Bank", "5+ years of experience required"),
+        make_job("Principal Software Engineer", "Capital One", ""),
+        make_job("Software Engineer", "Unknown LLC", "Nice team"),
     ]
     monkeypatch.setattr(w, "scrape_all", lambda *a, **k: batch2)
     assert w.main() == 0
     titles = sorted(p[0] for p in pushes)
-    assert titles == ["Business Analyst", "Senior Data Analyst"], titles
+    assert titles == ["Java Developer", "Senior Software Engineer"], titles
     # HIGH (sponsorship in posting) is sent before KNOWN
-    assert pushes[0][0] == "Business Analyst"
+    assert pushes[0][0] == "Java Developer"
 
     pushes.clear()
     assert w.main() == 0
@@ -110,10 +110,10 @@ def test_full_run(tmp_path, monkeypatch):
 
 
 def test_federal_named_company_kept_but_clearance_dropped():
-    job = make_job("Data Analyst", "Navy Federal Credit Union", "2 years experience")
+    job = make_job("Software Engineer", "Navy Federal Credit Union", "2 years experience")
     keep, _, tag, _ = w.evaluate(job, SPONSORS | {"navy federal credit union"})
     assert keep and tag == "KNOWN"
-    job = make_job("Data Analyst", "Some Federal Co", "Active Secret clearance required")
+    job = make_job("Software Engineer", "Some Federal Co", "Active Secret clearance required")
     keep, reason, _, _ = w.evaluate(job, SPONSORS)
     assert not keep and reason == "no sponsorship / clearance"
 
@@ -142,51 +142,49 @@ def test_build_sponsors_long_and_wide(tmp_path, monkeypatch):
 
 
 def test_titles_for_all_five_resumes():
-    for t in ["GIS Analyst", "Geospatial Data Analyst", "Remote Sensing Analyst I",
-              "Data Quality Analyst", "Data Governance Analyst", "Data Steward",
-              "Power BI Analyst", "Reporting Analyst", "Business Operations Analyst"]:
+    for t in ["DevOps Engineer", "Site Reliability Engineer", "Cloud Engineer",
+              "Data Engineer II", "ETL Developer", "Frontend Engineer", "Front-End Developer",
+              "React Developer", "Java Developer", "Backend Engineer", "Full Stack Developer",
+              "AI Engineer", "Forward Deployed Engineer"]:
         assert w.title_ok(t), t
-    for t in ["GIS Manager", "Lead Data Quality Analyst", "Principal Geospatial Analyst"]:
+    for t in ["DevOps Manager", "Lead Data Engineer", "Principal Frontend Engineer", "Solutions Architect"]:
         assert not w.title_ok(t), t
 
 
 def test_pick_resume():
-    long_gis = "Use ArcGIS, QGIS and Python with satellite imagery and raster data. " * 5
-    assert w.pick_resume("GIS Analyst", long_gis)[0] == "Geospatial Analyst"
-    assert w.pick_resume("Geospatial Data Analyst", long_gis)[0] == "Geospatial Analyst"
-    assert w.pick_resume("Data Quality Analyst", "data profiling and data lineage")[0] == "Data Quality : Governance"
-    assert w.pick_resume("BI Analyst", "Power BI and DAX dashboards")[0] == "Business Intelligence Analyst"
-    assert w.pick_resume("Business Analyst", "gather requirements from stakeholder groups")[0] == "Business Analyst"
-    assert w.pick_resume("Data Analyst", "SQL and Python")[0] == "Data Analyst"
+    assert w.pick_resume("DevOps Engineer", "Docker, Kubernetes, Terraform on AWS")[0] == "devops-engineer"
+    assert w.pick_resume("Data Engineer", "Build ETL pipelines with Spark and Airflow")[0] == "Data-Engineer"
+    assert w.pick_resume("Frontend Engineer", "React and TypeScript")[0] == "frontend"
+    assert w.pick_resume("Java Developer", "Spring Boot microservices")[0] == "java-developer"
+    assert w.pick_resume("Software Engineer", "Python and FastAPI")[0] == "software enginner"
     # Generic title: description decides
-    name, skills, title_hit = w.pick_resume("Operations Analyst", "Build Power BI dashboards with DAX, Power Query and Tableau. KPI reporting.")
-    assert name == "Business Intelligence Analyst" and not title_hit
-    # Generic Business Analyst title with a business-analysis description stays BA
-    assert w.pick_resume("Business Analyst", "Work with stakeholder teams on requirements, SQL and Excel")[0] == "Business Analyst"
-    # 'SQL' must not match inside 'NoSQL'; 'Git' not inside 'digital'
-    assert "SQL" not in w.matched_skills("Data Analyst", "NoSQL stores")
-    assert "Git" not in w.matched_skills("Data Analyst", "digital products")
+    name, _, title_hit = w.pick_resume("Software Engineer",
+        "Build React, TypeScript, Next.js, Redux and Tailwind UIs with Jest and Playwright tests.")
+    assert name == "frontend" and not title_hit
+    # 'Java' must not match inside 'JavaScript'; 'SQL' not inside 'NoSQL'
+    assert "Java" not in w.matched_skills("java-developer", "JavaScript only")
+    assert "SQL" not in w.matched_skills("java-developer", "NoSQL stores")
 
 
 def test_low_skill_match_dropped():
     desc = ("We need someone for warehouse picking and forklift operations. " * 10) + "2 years experience"
-    job = make_job("Operations Analyst", "Capital One", desc)
+    job = make_job("Software Engineer", "Capital One", desc)
     keep, reason, _, _ = w.evaluate(job, SPONSORS)
     assert not keep and reason == "low skill match"
-    desc2 = ("Analyze data with SQL, Python and Tableau. " * 10) + "2 years experience"
-    job2 = make_job("Data Analyst", "Capital One", desc2)
+    desc2 = ("Build services with Java, Spring Boot and Kafka. " * 10) + "2 years experience"
+    job2 = make_job("Java Developer", "Capital One", desc2)
     keep, _, _, _ = w.evaluate(job2, SPONSORS)
-    assert keep and job2["resume"] == "Data Analyst" and len(job2["skills"]) >= 3
+    assert keep and job2["resume"] == "java-developer" and len(job2["skills"]) >= 3
 
 
 def test_alert_message_names_resume(monkeypatch):
     sent = []
     monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="": sent.append(msg) or True)
-    job = make_job("GIS Analyst", "Capital One", "ArcGIS QGIS Python")
-    job["resume"], job["skills"] = "Geospatial Analyst", ["ArcGIS", "QGIS", "Python"]
+    job = make_job("Data Engineer", "Capital One", "ETL Spark Python")
+    job["resume"], job["skills"] = "Data-Engineer", ["ETL", "Spark", "Python"]
     w.notify_job(job, "KNOWN", 2)
-    assert sent[0].startswith("Use: Geospatial Analyst resume")
-    assert "Skills matched (3): ArcGIS, QGIS, Python" in sent[0]
+    assert sent[0].startswith("Use: Data-Engineer resume")
+    assert "Skills matched (3): ETL, Spark, Python" in sent[0]
 
 
 def test_linkedin_429_retry(monkeypatch):

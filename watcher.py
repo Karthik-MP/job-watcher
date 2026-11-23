@@ -1,8 +1,8 @@
 """
 Job Watcher
 -----------
-Checks Indeed, LinkedIn and Google Jobs for newly posted Data Analyst /
-Business Analyst roles in the USA, filters for 0-3 years of experience and
+Checks Indeed, LinkedIn and Google Jobs for newly posted Software / Java /
+Frontend / Data / DevOps engineer roles in the USA, filters for 0-3 years of experience and
 visa sponsorship, and sends a push notification to your phone via ntfy.
 
 Runs every 15 minutes on GitHub Actions (see .github/workflows/watch.yml).
@@ -31,91 +31,94 @@ import requests
 
 # =============================================================================
 # YOUR 5 RESUMES
-# Each alert says which resume to use. Folder names match
-# ~/Desktop/Resume_1/<name>/Manoj_Resume.pdf
+# Each alert says which resume to use. Names match the folders in
+# ~/Documents/career-ops/resume-generation/<name>/content.tex
 #   search:  terms searched on the job sites for this resume
 #   titles:  job titles this resume is built for (regex, case-insensitive)
 #   skills:  skills on this resume; matched against the job description
 #   title_weight: how much a title match counts versus each matched skill.
-#            Specific titles (GIS, Data Quality) count a lot; generic ones
-#            (Data Analyst, Business Analyst) less, so the description decides.
+#            Specific titles (DevOps, Data Engineer) count a lot; generic ones
+#            (Software Engineer) less, so the description decides.
 # Order matters only to break ties (more specific resumes first).
 # =============================================================================
 
 RESUMES = {
-    "Geospatial Analyst": {
+    "devops-engineer": {
         "title_weight": 10,
-        "search": ["GIS analyst", "geospatial analyst"],
+        "search": ["devops engineer", "site reliability engineer"],
         "titles": [
-            r"\bgis\b.*\banalyst\b", r"\bgeospatial\b.*\banalyst\b",
-            r"\bremote sensing\b.*\banalyst\b", r"\bspatial data analyst\b",
-            r"\bgis specialist\b", r"\bgeospatial specialist\b",
+            r"\bdev\s*ops\b", r"\bsite reliability\b", r"\bsre\b",
+            r"\bplatform engineer\b", r"\bcloud engineer\b",
+            r"\binfrastructure engineer\b", r"\b(build|release) engineer\b",
         ],
         "skills": [
-            "GIS", "ArcGIS", "QGIS", "PostGIS", "GeoPandas", "Rasterio", "Shapely",
-            "GeoJSON", "GeoTIFF", "spatial", "geospatial", "remote sensing",
-            "satellite", "imagery", "SAR", "Sentinel", "Landsat", "NDVI",
-            "change detection", "DEM", "raster", "Python", "SQL", "PostgreSQL",
+            "Docker", "Kubernetes", "Terraform", "Ansible", "CI/CD", "Jenkins",
+            "GitHub Actions", "Infrastructure as Code", "Nginx", "AWS", "EC2",
+            "S3", "IAM", "GCP", "Prometheus", "Grafana", "monitoring",
+            "observability", "logging", "alerting", "Linux", "Bash", "Python",
+            "Cloudflare", "DNS",
         ],
     },
-    "Data Quality : Governance": {
+    "Data-Engineer": {
         "title_weight": 10,
-        "search": ["data quality analyst", "data governance analyst"],
+        "search": ["data engineer"],
         "titles": [
-            r"\bdata quality\b", r"\bdata governance\b", r"\bdata steward",
-            r"\bdata integrity analyst\b", r"\bdata management analyst\b",
+            r"\bdata engineer", r"\betl (developer|engineer)\b",
+            r"\bbig data\b", r"\banalytics engineer\b", r"\bdata pipeline\b",
         ],
         "skills": [
-            "data quality", "data governance", "data profiling", "data validation",
-            "data lineage", "metadata", "reconciliation", "data integrity",
-            "duplicate", "completeness", "ETL", "SQL", "Python", "Pandas",
-            "Power BI", "Excel", "Snowflake", "Databricks", "data stewardship",
-            "data standards", "audit",
+            "ETL", "ELT", "data pipeline", "SQL", "Python", "Spark", "Kafka",
+            "Airflow", "Spring Batch", "PostgreSQL", "MySQL", "Oracle", "MongoDB",
+            "TimescaleDB", "Redis", "data warehouse", "data modeling", "schema",
+            "batch", "streaming", "AWS", "GCP", "Lambda", "S3", "Docker",
+            "Terraform", "Pandas",
         ],
     },
-    "Business Intelligence Analyst": {
+    "frontend": {
+        "title_weight": 10,
+        "search": ["frontend engineer", "react developer"],
+        "titles": [
+            r"\bfront\s*-?\s*end\b", r"\bui (engineer|developer)\b",
+            r"\breact\b", r"\bjavascript (engineer|developer)\b",
+            r"\btypescript (engineer|developer)\b", r"\bweb developer\b",
+        ],
+        "skills": [
+            "React", "React Native", "TypeScript", "JavaScript", "Next.js",
+            "Redux", "Zustand", "React Query", "Tailwind", "HTML", "CSS",
+            "Expo", "Node.js", "REST", "GraphQL", "Jest", "Vitest",
+            "React Testing Library", "Playwright", "Webpack", "Vite",
+            "accessibility", "Lighthouse", "Material UI",
+        ],
+    },
+    "java-developer": {
         "title_weight": 6,
-        "search": ["business intelligence analyst"],
+        "search": ["java developer"],
         "titles": [
-            r"\bbusiness intelligence\b", r"\bbi analyst\b", r"\bpower bi\b",
-            r"\breporting analyst\b", r"\binsights analyst\b",
-            r"\bbi developer\b", r"\bdashboard\b",
+            r"\bjava\b", r"\bspring boot\b", r"\bback\s*-?\s*end\b",
+            r"\bj2ee\b",
         ],
         "skills": [
-            "Power BI", "DAX", "Power Query", "Tableau", "Tableau Prep", "dashboard",
-            "KPI", "data model", "star schema", "data warehouse", "ETL", "SQL",
-            "Excel", "Snowflake", "Fabric", "Redshift", "BigQuery", "reporting",
-            "visualization", "SQL Server",
+            "Java", "Spring Boot", "Spring Batch", "Spring Security",
+            "Spring Data JPA", "Hibernate", "Microservices", "REST", "Kafka",
+            "Multithreading", "Concurrency", "Oracle", "MySQL", "PostgreSQL",
+            "SQL", "PL/SQL", "JUnit", "Mockito", "Maven", "Gradle", "SonarQube",
+            "Docker", "Kubernetes", "AWS", "OAuth", "JWT",
         ],
     },
-    "Business Analyst": {
+    "software enginner": {
         "title_weight": 3,
-        "search": ["business analyst"],
+        "search": ["software engineer", "full stack developer"],
         "titles": [
-            r"\bbusiness analyst\b", r"\bbusiness operations analyst\b",
-            r"\bsales operations analyst\b", r"\bstrategy analyst\b",
+            r"\bsoftware (engineer|developer|development engineer)\b", r"\bsde\b",
+            r"\bfull\s*-?\s*stack\b", r"\bapplication developer\b",
+            r"\bai engineer\b", r"\bforward deployed\b", r"\bllm engineer\b",
         ],
         "skills": [
-            "requirements", "stakeholder", "business rules", "process improvement",
-            "process documentation", "vendor", "risk assessment", "PowerPoint",
-            "Excel", "SQL", "Power BI", "Tableau", "Confluence", "SharePoint",
-            "Salesforce", "KPI", "decision support", "business analysis",
-            "cross-functional", "recommendations",
-        ],
-    },
-    "Data Analyst": {
-        "title_weight": 3,
-        "search": ["data analyst"],
-        "titles": [
-            r"\bdata analyst\b", r"\banalytics analyst\b",
-            r"\bdata\s*(and|&)\s*analytics analyst\b", r"\bproduct analyst\b",
-            r"\boperations analyst\b",
-        ],
-        "skills": [
-            "SQL", "Python", "Pandas", "NumPy", "Excel", "Power BI", "Tableau",
-            "ETL", "data quality", "data validation", "statistical",
-            "hypothesis", "dashboard", "Snowflake", "BigQuery", "Databricks",
-            "Redshift", "PostgreSQL", "AWS", "Git", "cohort", "segmentation",
+            "Python", "Java", "TypeScript", "JavaScript", "React", "Next.js",
+            "Spring Boot", "FastAPI", "Django", "Flask", "Node.js", "REST",
+            "GraphQL", "Microservices", "WebSockets", "PostgreSQL", "MongoDB",
+            "Redis", "Kafka", "Docker", "Kubernetes", "AWS", "GCP", "CI/CD",
+            "LangChain", "LangGraph", "LLM", "RAG", "OAuth", "system design",
         ],
     },
 }
@@ -619,7 +622,7 @@ def notify_job(job: dict, tag: str, years) -> bool:
     skill_line = (f"Skills matched ({len(skills)}): {', '.join(skills[:6])}"
                   if skills else "Skills: description not available")
     message = (
-        f"Use: {job.get('resume', 'Data Analyst')} resume\n"
+        f"Use: {job.get('resume', 'software enginner')} resume\n"
         f"{job['company']}\n"
         f"{job['location'] or 'Location not listed'}{remote}\n"
         f"{TAG_LABEL.get(tag, tag)} | {exp}\n"
@@ -710,7 +713,7 @@ def main() -> int:
             seen[key] = now
         lines = [f"- {j['title']} | {j['company']} | {j.get('resume')}"
                  for _, j, _, _ in matches[sent:sent + 15]]
-        send_push(f"+{extra} more new analyst jobs", "\n".join(lines), tags="clipboard")
+        send_push(f"+{extra} more new jobs", "\n".join(lines), tags="clipboard")
 
     save_seen(seen)
     save_state(state)

@@ -25,7 +25,8 @@ def test_known_sponsor_prefix_match():
 
 def test_titles():
     assert w.title_ok("Software Engineer")
-    assert w.title_ok("Senior Software Engineer - Payments")
+    assert not w.title_ok("Senior Software Engineer - Payments")
+    assert not w.title_ok("Sr. Data Engineer")
     assert w.title_ok("Software Engineer II")
     assert not w.title_ok("Principal Software Engineer")
     assert not w.title_ok("Software Engineer III")
@@ -38,7 +39,12 @@ def test_titles():
 def test_years():
     assert w.min_years_required("Requires 2+ years of experience in SQL.") == 2
     assert w.min_years_required("3-5 years of relevant experience") == 3
-    assert w.min_years_required("Experience: 5 years minimum. Also 1 year of Tableau experience") == 1
+    assert w.min_years_required("Experience: 5 years minimum. Also 1 year of Tableau experience") == 5
+    assert w.min_years_required("8+ years of experience and a Bachelor's. 2+ years with Kubernetes") == 8
+    assert w.min_years_required("5 or more yrs of experience") == 5
+    assert w.min_years_required("Have at least three years of relevant experience") == 3
+    assert w.min_years_required("5+ years of hands-on data warehouse, business intelligence engineering, "
+                                "database development, data engineering, or closely related experience") == 5
     assert w.min_years_required("We have been in business for 30 years.") is None
     assert w.min_years_required("") is None
 
@@ -48,6 +54,18 @@ def test_sponsorship_tags():
     assert w.sponsorship_tag("Acme", "Must be authorized to work in the US without sponsorship.", SPONSORS) is None
     assert w.sponsorship_tag("Acme", "Applicants must be a U.S. citizen.", SPONSORS) is None
     assert w.sponsorship_tag("Acme", "Active Secret clearance required.", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "OPEN ONLY TO CANDIDATES AUTHORIZED TO WORK WITHOUT CURRENT OR FUTURE EMPLOYER SPONSORSHIP", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "Only US citizens or green card holders.", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "Candidates must not require sponsorship.", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "USC/GC only", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "TS/SCI REQUIRED. NO EXCEPTIONS.", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "**Clearance Requirements** Secret eligible", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "Ability to obtain a secret security clearance.", SPONSORS) is None
+    assert w.sponsorship_tag("Acme", "Must obtain Public Trust", SPONSORS) is None
+    # staffing posts: visa lists are positive, C2C/W2 kept as CONTRACT
+    assert w.sponsorship_tag("Acme", "Visa: USC, GC, H1B, OPT, H4-EAD", SPONSORS) == "HIGH"
+    assert w.sponsorship_tag("Acme", "Employment Type: W2", SPONSORS) == "CONTRACT"
+    assert w.sponsorship_tag("Acme", "Tax terms: W-2, 1099, C2C", SPONSORS) == "CONTRACT"
     assert w.sponsorship_tag("Capital One", "No sponsorship available for this role.", SPONSORS) is None
     assert w.sponsorship_tag("Acme", "Visa sponsorship is available.", SPONSORS) == "HIGH"
     assert w.sponsorship_tag("Acme", "STEM OPT candidates welcome.", SPONSORS) == "HIGH"
@@ -63,7 +81,12 @@ def test_job_key_dedupes_across_sites():
     assert a == b
 
 
+FILLER = " Build services with Python, Java, Spring Boot, React, Docker and AWS." * 6
+
+
 def make_job(title, company, desc, location="McLean, VA", site="indeed"):
+    if len(desc) < 300:
+        desc += FILLER  # real postings are long; short ones are dropped as "no description"
     return {"site": site, "title": title, "company": company, "location": location,
             "url": f"https://example.com/{abs(hash(title + company))}", "board_url": "",
             "description": desc, "date_posted": "2026-10-27", "is_remote": False}
@@ -88,7 +111,7 @@ def test_full_run(tmp_path, monkeypatch):
 
     pushes.clear()
     batch2 = batch1 + [
-        make_job("Senior Software Engineer", "Amazon Web Services, Inc.", "1+ years of experience", site="linkedin"),
+        make_job("Software Engineer II", "Amazon Web Services, Inc.", "1+ years of experience", site="linkedin"),
         make_job("Java Developer", "Acme Corp", "Visa sponsorship is available. 2 years experience"),
         make_job("Software Engineer", "Defense Co", "Active Secret clearance required"),
         make_job("Software Engineer", "Big Bank", "5+ years of experience required"),
@@ -98,7 +121,7 @@ def test_full_run(tmp_path, monkeypatch):
     monkeypatch.setattr(w, "scrape_all", lambda *a, **k: batch2)
     assert w.main() == 0
     titles = sorted(p[0] for p in pushes)
-    assert titles == ["Java Developer", "Senior Software Engineer"], titles
+    assert titles == ["Java Developer", "Software Engineer II"], titles
     # HIGH (sponsorship in posting) is sent before KNOWN
     assert pushes[0][0] == "Java Developer"
 
@@ -145,9 +168,11 @@ def test_titles_for_all_five_resumes():
     for t in ["DevOps Engineer", "Site Reliability Engineer", "Cloud Engineer",
               "Data Engineer II", "ETL Developer", "Frontend Engineer", "Front-End Developer",
               "React Developer", "Java Developer", "Backend Engineer", "Full Stack Developer",
-              "AI Engineer", "Forward Deployed Engineer"]:
+              "AI Engineer", "Forward Deployed Engineer", "Junior Developer (AI/SI)",
+              "Software Dev Engineer, Prime Video", "Associate Full Stack Developer", "Engineer I, Data"]:
         assert w.title_ok(t), t
-    for t in ["DevOps Manager", "Lead Data Engineer", "Principal Frontend Engineer", "Solutions Architect"]:
+    for t in ["DevOps Manager", "Lead Data Engineer", "Principal Frontend Engineer", "Solutions Architect",
+              "DevOps Engineer (Secret)", "Software Engineering Asc Mgr - L4"]:
         assert not w.title_ok(t), t
 
 
@@ -220,7 +245,8 @@ def test_linkedin_rotation_takes_stalest_terms():
     now = datetime(2026, 11, 11, 12, tzinfo=timezone.utc)
     state = {}
     covered = []
-    for run in range(2):
+    runs = -(-len(w.SEARCH_TERMS) // w.LINKEDIN_TERMS_PER_RUN)
+    for run in range(runs):
         terms = w.linkedin_terms_this_run(state)
         assert len(terms) == min(w.LINKEDIN_TERMS_PER_RUN, len(w.SEARCH_TERMS))
         covered += terms

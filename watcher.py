@@ -107,9 +107,12 @@ RESUMES = {
     },
     "software enginner": {
         "title_weight": 3,
-        "search": ["software engineer", "full stack developer"],
+        "search": ["software engineer", "full stack developer", "junior software engineer",
+                   "associate software engineer", "entry level software engineer"],
         "titles": [
-            r"\bsoftware (engineer|developer|development engineer)\b", r"\bsde\b",
+            r"\bsoftware (engineer|developer|dev(elopment)? engineer)\b", r"\bsde\b",
+            r"\b(junior|jr|associate|entry[- ]level|new grad|graduate|early career)\b.*\b(developer|engineer)\b",
+            r"\b(developer|engineer) (i|1)\b",
             r"\bfull\s*-?\s*stack\b", r"\bapplication developer\b",
             r"\bai engineer\b", r"\bforward deployed\b", r"\bllm engineer\b",
         ],
@@ -127,6 +130,10 @@ RESUMES = {
 # are skipped. Only applied when the description is long enough to judge.
 MIN_SKILL_MATCHES = 2
 
+# Jobs with a shorter description are dropped: without the text, the
+# sponsorship and experience checks can't run (LinkedIn often returns none).
+MIN_DESCRIPTION_CHARS = 300
+
 # Searched terms = all resume search terms, without duplicates.
 SEARCH_TERMS = list(dict.fromkeys(t for r in RESUMES.values() for t in r["search"]))
 
@@ -136,7 +143,8 @@ LOCATION = "United States"
 # the error is logged and the others still run.
 # Note: zip_recruiter and glassdoor round "hours old" up to 1 day, so a job
 # first seen there may be up to ~24 hours old.
-SITES = ["indeed", "linkedin", "google", "zip_recruiter", "glassdoor"]
+# ponytail: google, zip_recruiter, glassdoor return 403/empty from GitHub runners; add back if that changes
+SITES = ["indeed", "linkedin"]
 
 # Look-back window. GitHub often runs the schedule hours late, so each search
 # looks back to the last time THAT site+term was searched successfully (saved
@@ -198,13 +206,18 @@ FETCH_LINKEDIN_DESCRIPTION = True
 # Title must match at least one resume's title patterns (see RESUMES).
 TITLE_INCLUDE = [p for r in RESUMES.values() for p in r["titles"]]
 
-# Title must NOT match any of these. "Senior" is allowed on purpose; the
-# experience check below decides if a Senior role is within reach.
+# Title must NOT match any of these. Senior/Sr dropped: those roles ask
+# 5+ years even when the description also mentions smaller numbers.
 TITLE_EXCLUDE = [
+    r"\bsenior\b",
+    r"\bsr\b",
     r"\bprincipal\b",
     r"\bstaff\b",
     r"\blead\b",
     r"\bmanager\b",
+    r"\bmgr\b",
+    r"\bsecret\b",
+    r"\bpolygraph\b",
     r"\bdirector\b",
     r"\bhead of\b",
     r"\bvice president\b",
@@ -234,6 +247,20 @@ NO_SPONSORSHIP_PATTERNS = [
     r"not (be )?(able|eligible|in a position) to (provide |offer )?sponsor",
     r"(will|can|does|do) not (provide |offer )?(visa )?sponsor",
     r"unable to (provide |offer )?(visa )?sponsor",
+    r"cannot (provide |offer )?(visa )?sponsor",
+    r"(must|should|will) not (now or in the future )?require (visa |employer )?sponsorship",
+    r"\bno (h-?1b|visa)\b",
+    r"only[^.]{0,40}citizens? (or|and) (lawful )?(permanent residents?|green card)",
+    r"citizens? (or|and) (lawful )?(permanent residents?|green card)( holders?)? only",
+    r"\b(usc|gc)\s*(/|or|and|,)\s*(gc|usc)\s*(only|candidates only)",
+    r"u\.?s\.? citizen(ship)? (is )?required",
+    # Any clearance mention: "Clearance Requirements", "obtain a secret security
+    # clearance", "Clearance Level", "DOE Q Clearance"... all need US citizenship.
+    r"\bclearance\b",
+    r"\bts\s*/+\s*sci\b",
+    r"\btop[\s-]secret\b",
+    r"\bpolygraph\b",
+    r"\bpublic trust\b",
     r"sponsorship (is )?not (available|provided|offered)",
     r"without (the need for )?(current or future |now or in the future )?(visa |employer )?sponsorship",
     r"not (currently )?(offering|providing) (visa )?sponsorship",
@@ -256,7 +283,22 @@ SPONSORSHIP_POSITIVE_PATTERNS = [
     r"\bstem opt\b",
     r"\bf-?1 (opt|visa)\b",
     r"\bopt (candidates|students|eligible)\b",
+    # visa lists in staffing posts: "H1B, OPT, H4-EAD", "OPT/CPT"
+    r"\b(h-?1b|opt|cpt|h4[\s-]?ead|gc[\s-]?ead|l2[\s-]?ead|ead)\s*(,|/|or|and)\s*(h-?1b|opt|cpt|h4|gc|usc|ead|tn|l2)\b",
 ]
+
+# Contract roles (C2C / W2 / 1099) from staffing firms. Many work with H-1B
+# and OPT but aren't on the sponsor list, so they are kept and tagged CONTRACT.
+CONTRACT_PATTERNS = [
+    r"\bc2c\b",
+    r"\bcorp[\s-]to[\s-]corp\b",
+    r"\bw-?2\b",
+    r"\b1099\b",
+]
+
+# Early-career titles are sent first within each tag.
+JUNIOR_TITLE_RE = re.compile(
+    r"\b(junior|jr|associate|entry[- ]level|new grad|graduate|early career|i|1)\b", re.IGNORECASE)
 
 # If True, also alert on jobs from companies NOT in sponsors.txt when the
 # posting says nothing about sponsorship (tagged "Unknown"). More alerts,
@@ -344,24 +386,34 @@ def any_match(patterns, text: str) -> bool:
 
 
 YEARS_RE = re.compile(
-    r"(\d{1,2})\s*(?:\+|plus)?\s*(?:(?:-|–|—|to)\s*(\d{1,2})\s*\+?\s*)?years?",
+    r"(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*(\d{1,2})\s*\+?\s*)?(?:years?|yrs?)\b",
     re.IGNORECASE,
 )
 
 
+NUMBER_WORDS = {w: str(i) for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten".split())}
+NUMBER_WORDS_RE = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", re.IGNORECASE)
+
+
 def min_years_required(description: str):
-    """Lowest 'X years' mentioned near the word 'experience'. None if not stated."""
+    """Highest 'X years' minimum mentioned near the word 'experience'.
+    Highest, not lowest: '8+ years overall, 2+ years Kubernetes' means 8.
+    None if not stated."""
     if not description:
         return None
+    description = NUMBER_WORDS_RE.sub(lambda m: NUMBER_WORDS[m.group(0).lower()], description)
     found = []
     for m in YEARS_RE.finditer(description):
-        window = description[max(0, m.start() - 80): m.end() + 80].lower()
+        # 150 after: "5+ years of hands-on data warehouse, BI engineering, ... or related experience"
+        window = description[max(0, m.start() - 80): m.end() + 150].lower()
         if "experience" not in window and "exp." not in window:
             continue
         low = int(m.group(1))
-        if 0 <= low <= 20:
+        # ponytail: >15 is usually company age ("30 years of experience serving..."), not a requirement
+        if 0 <= low <= 15:
             found.append(low)
-    return min(found) if found else None
+    return max(found) if found else None
 
 
 def title_ok(title: str) -> bool:
@@ -371,12 +423,14 @@ def title_ok(title: str) -> bool:
 
 
 def sponsorship_tag(company: str, description: str, sponsors: set):
-    """Returns 'HIGH', 'KNOWN', 'UNKNOWN', or None (drop: says no sponsorship)."""
+    """Returns 'HIGH', 'CONTRACT', 'KNOWN', 'UNKNOWN', or None (drop: says no sponsorship)."""
     text = description or ""
     if any_match(NO_SPONSORSHIP_PATTERNS, text):
         return None
     if any_match(SPONSORSHIP_POSITIVE_PATTERNS, text):
         return "HIGH"
+    if any_match(CONTRACT_PATTERNS, text):
+        return "CONTRACT"
     if is_known_sponsor(company, sponsors):
         return "KNOWN"
     return "UNKNOWN"
@@ -569,6 +623,8 @@ def evaluate(job: dict, sponsors: set):
         return False, "no company", None, None
     if any_match(COMPANY_EXCLUDE, job["company"]):
         return False, "company excluded", None, None
+    if len(job["description"] or "") < MIN_DESCRIPTION_CHARS:
+        return False, "no description", None, None
     years = min_years_required(job["description"])
     if years is not None and years > MAX_YEARS_EXPERIENCE:
         return False, f"{years}+ yrs", None, years
@@ -579,7 +635,7 @@ def evaluate(job: dict, sponsors: set):
         return False, "sponsor unknown", tag, years
     resume, skills, _ = pick_resume(job["title"], job["description"])
     job["resume"], job["skills"] = resume, skills
-    if len(job["description"]) >= 300 and len(skills) < MIN_SKILL_MATCHES:
+    if len(skills) < MIN_SKILL_MATCHES:
         return False, "low skill match", tag, years
     return True, "match", tag, years
 
@@ -590,6 +646,7 @@ def evaluate(job: dict, sponsors: set):
 
 TAG_LABEL = {
     "HIGH": "Posting mentions sponsorship",
+    "CONTRACT": "C2C/W2 contract",
     "KNOWN": "Known H-1B sponsor",
     "UNKNOWN": "Sponsorship unknown",
 }
@@ -629,7 +686,7 @@ def notify_job(job: dict, tag: str, years) -> bool:
         f"{skill_line}\n"
         f"via {job['site']}"
     )
-    priority = "high" if tag == "HIGH" else "default"
+    priority = "high" if tag in ("HIGH", "CONTRACT") else "default"
     return send_push(job["title"], message, job["url"], priority=priority)
 
 
@@ -674,9 +731,9 @@ def main() -> int:
 
     print("Filter results: " + ", ".join(f"{k}={v}" for k, v in sorted(reasons.items())))
     print(f"New matches: {len(matches)}")
-    # HIGH first, then KNOWN, then UNKNOWN
-    order = {"HIGH": 0, "KNOWN": 1, "UNKNOWN": 2}
-    matches.sort(key=lambda m: order.get(m[2], 9))
+    # HIGH first, then CONTRACT, KNOWN, UNKNOWN; early-career titles first within each
+    order = {"HIGH": 0, "CONTRACT": 1, "KNOWN": 2, "UNKNOWN": 3}
+    matches.sort(key=lambda m: (order.get(m[2], 9), not JUNIOR_TITLE_RE.search(m[1]["title"])))
     for _, job, tag, years in matches:
         print(f"  [{tag}] {job['title']} | {job['company']} | {job['location']} | "
               f"yrs={years} | resume={job.get('resume')} | "

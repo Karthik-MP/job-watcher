@@ -13,8 +13,8 @@ so your laptop can be off.
 | 2 | It pulls jobs posted since the last search (at least 2 hours, at most 48) from Indeed, LinkedIn, Google Jobs, ZipRecruiter and Glassdoor |
 | 3 | Keeps engineer titles matching the 5 resumes; drops Principal, Lead, Manager, Intern, III/IV, clearance |
 | 4 | Drops jobs asking for more than 3 years of experience |
-| 5 | Drops postings that say "no sponsorship", "US citizen only", "clearance required" |
-| 6 | Keeps postings that mention sponsorship (HIGH) or come from a known H-1B sponsor in `sponsors.txt` (KNOWN) |
+| 5 | Drops postings that say "no sponsorship", "US citizen only", or mention any clearance (TS/SCI, Secret, Public Trust) |
+| 6 | Keeps postings that mention sponsorship or list visas (HIGH), C2C/W2/1099 contracts (CONTRACT), or come from a known H-1B sponsor (KNOWN) |
 | 7 | Skips anything already alerted (`seen.json`), even if the same job appears on two sites |
 | 8 | Sends a push to your phone via the free ntfy app; tapping it opens the job |
 
@@ -130,9 +130,9 @@ external timer to start the workflow every 15 minutes:
 |---|---|---|
 | `RESUMES` | 5 resumes | Searches, titles and skills per resume |
 | `MIN_SKILL_MATCHES` | 2 | Skip jobs matching fewer of your skills |
-| `SITES` | indeed, linkedin, google, zip_recruiter, glassdoor | Where to search. Blocked sites are logged and skipped |
+| `SITES` | indeed, linkedin | Where to search. google, zip_recruiter, glassdoor are blocked from GitHub servers, so they are off |
 | `COMPANY_EXCLUDE` | empty | Company name regexes to skip |
-| `MAX_YEARS_EXPERIENCE` | 3 | Drop jobs asking for more |
+| `MAX_YEARS_EXPERIENCE` | 3 | Drop jobs asking for more (highest minimum in the posting counts) |
 | `ALERT_UNKNOWN_SPONSOR` | False | True = also alert when company is not a known sponsor and the posting says nothing either way |
 | `TITLE_INCLUDE` / `TITLE_EXCLUDE` | see file | Title filters |
 | `MAX_ALERTS_PER_RUN` | 10 | Extra matches go into one summary push |

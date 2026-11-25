@@ -7,6 +7,7 @@ a conflict. This script merges instead:
 
 - seen.json:  union of both; for a job in both, the later timestamp wins.
 - state.json: last_searched per site+term; the later timestamp wins.
+              blocked companies: union of both.
 
 Usage (from the workflow):
     python merge_state.py <our_seen.json> <our_state.json>
@@ -48,8 +49,9 @@ def merge_seen(base: dict, ours: dict) -> dict:
 def merge_state(base: dict, ours: dict) -> dict:
     merged = dict(base)
     for k, v in ours.items():
-        if k != "last_searched":
+        if k not in ("last_searched", "blocked"):
             merged.setdefault(k, v)
+    merged["blocked"] = {**ours.get("blocked", {}), **base.get("blocked", {})}
     last = dict(base.get("last_searched", {}))
     for key, stamp in ours.get("last_searched", {}).items():
         last[key] = later(last.get(key), stamp)

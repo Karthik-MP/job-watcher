@@ -2,8 +2,9 @@ name: Job Watcher
 
 on:
   schedule:
-    # Every 15 minutes (UTC). GitHub may start scheduled runs a few minutes late.
-    - cron: "*/15 * * * *"
+    # Every 2 hours (UTC). GitHub may start scheduled runs late; each run
+    # looks back to the last search, so nothing is missed.
+    - cron: "0 */2 * * *"
   workflow_dispatch:
     inputs:
       mode:

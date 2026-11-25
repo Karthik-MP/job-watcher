@@ -653,13 +653,15 @@ TAG_LABEL = {
 
 
 def send_push(title: str, message: str, click_url: str = "", priority: str = "default",
-              tags: str = "briefcase") -> bool:
+              tags: str = "briefcase", actions: str = "") -> bool:
     if not NTFY_TOPIC:
         print("  (NTFY_TOPIC not set, skipping push)")
         return False
     headers = {"Title": header_safe(title), "Priority": priority, "Tags": tags}
     if click_url:
         headers["Click"] = header_safe(click_url)
+    if actions:
+        headers["Actions"] = actions
     try:
         resp = requests.post(f"{NTFY_SERVER}/{NTFY_TOPIC}",
                              data=message.encode("utf-8"), headers=headers, timeout=20)
@@ -670,6 +672,52 @@ def send_push(title: str, message: str, click_url: str = "", priority: str = "de
     except requests.RequestException as exc:
         print(f"  push failed: {exc}")
         return False
+
+
+# =============================================================================
+# BLOCK BUTTONS
+# Each alert has buttons that POST "<reason>|<company>" to a side topic,
+# <NTFY_TOPIC>-blocked. Every run reads that topic and adds the company to
+# state.json "blocked"; jobs from blocked companies are skipped from then on.
+# ntfy.sh keeps messages ~12 hours, and runs every 2 hours, so none are lost.
+# To unblock, delete the company from "blocked" in state.json.
+# =============================================================================
+
+BLOCK_REASONS = {"staffing": "Staffing", "nosponsor": "No sponsor"}
+
+
+def block_topic_url() -> str:
+    return f"{NTFY_SERVER}/{NTFY_TOPIC}-blocked"
+
+
+def block_actions(company: str) -> str:
+    """ntfy Actions header: one http button per block reason."""
+    name = header_safe(company).replace("'", "").replace('"', "").replace("|", " ")
+    return "; ".join(
+        f"http, {label}, {block_topic_url()}, body='{reason}|{name}', clear=true"
+        for reason, label in BLOCK_REASONS.items())
+
+
+def fetch_blocks(state: dict) -> None:
+    """Add companies blocked from the phone since the last run to state['blocked']."""
+    if not NTFY_TOPIC:
+        return
+    try:
+        resp = requests.get(f"{block_topic_url()}/json", params={"poll": 1, "since": "all"}, timeout=20)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"  could not read blocked companies: {exc}")
+        return
+    blocked = state.setdefault("blocked", {})
+    for line in resp.text.splitlines():
+        try:
+            reason, _, company = (json.loads(line).get("message") or "").partition("|")
+        except (ValueError, AttributeError):
+            continue
+        norm = normalize_company(company)
+        if reason in BLOCK_REASONS and norm and norm not in blocked:
+            blocked[norm] = {"company": company.strip(), "reason": reason}
+            print(f"Blocked from phone: {company.strip()} ({BLOCK_REASONS[reason]})")
 
 
 def notify_job(job: dict, tag: str, years) -> bool:
@@ -687,7 +735,8 @@ def notify_job(job: dict, tag: str, years) -> bool:
         f"via {job['site']}"
     )
     priority = "high" if tag in ("HIGH", "CONTRACT") else "default"
-    return send_push(job["title"], message, job["url"], priority=priority)
+    return send_push(job["title"], message, job["url"], priority=priority,
+                     actions=block_actions(job["company"]))
 
 
 # =============================================================================
@@ -701,8 +750,10 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.test_notify:
-        ok = send_push("Job Watcher test", "If you see this, alerts are working.",
-                       priority="high", tags="white_check_mark")
+        ok = send_push("Job Watcher test", "If you see this, alerts are working. "
+                       "The buttons block 'Test Company' (harmless) to try them out.",
+                       priority="high", tags="white_check_mark",
+                       actions=block_actions("Test Company"))
         print("Test push sent." if ok else "Test push FAILED.")
         return 0 if ok else 1
 
@@ -713,6 +764,9 @@ def main() -> int:
     print(f"Run at {now} | sponsors loaded: {len(sponsors)} | seen: {len(seen)}")
 
     state = load_state()
+    fetch_blocks(state)
+    blocked = state.get("blocked", {})
+    print(f"Blocked companies: {len(blocked)}")
     jobs = scrape_all(state)
     print(f"Scraped {len(jobs)} postings")
 
@@ -722,6 +776,9 @@ def main() -> int:
     for job in jobs:
         key = job_key(job["company"], job["title"], job["location"])
         if key in seen or key in keys_this_run:
+            continue
+        if normalize_company(job["company"]) in blocked:
+            reasons["blocked"] = reasons.get("blocked", 0) + 1
             continue
         keep, reason, tag, years = evaluate(job, sponsors)
         reasons[reason] = reasons.get(reason, 0) + 1

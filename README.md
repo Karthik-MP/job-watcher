@@ -9,7 +9,7 @@ so your laptop can be off.
 
 | Step | What happens |
 |---|---|
-| 1 | Every 15 minutes GitHub runs `watcher.py` |
+| 1 | Every 2 hours GitHub runs `watcher.py` |
 | 2 | It pulls jobs posted since the last search (at least 2 hours, at most 48) from Indeed, LinkedIn, Google Jobs, ZipRecruiter and Glassdoor |
 | 3 | Keeps engineer titles matching the 5 resumes; drops Principal, Lead, Manager, Intern, III/IV, clearance |
 | 4 | Drops jobs asking for more than 3 years of experience |
@@ -95,6 +95,15 @@ appear in the description. Jobs whose description matches fewer than
    and a list of matches. Nothing is sent in dry mode.
 4. Run again with mode `normal`. You get "Job Watcher is running".
    From now on it runs by itself every 15 minutes.
+
+## Blocking companies from your phone
+
+Each alert has two buttons: **Staffing** and **No sponsor**. Tapping one
+sends the company name to a private side topic (`<your topic>-blocked`).
+The next run adds it to `"blocked"` in `state.json`, and jobs from that
+company are skipped from then on. To unblock, delete the company from
+`"blocked"` in `state.json` and commit. Runs every 2 hours read the side
+topic well within ntfy.sh's ~12 hour message cache.
 
 ## Sponsor list (automatic)
 

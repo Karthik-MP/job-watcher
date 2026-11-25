@@ -100,7 +100,7 @@ def test_full_run(tmp_path, monkeypatch):
     sponsors_file.write_text("Capital One\nAmazon\n")
     monkeypatch.setattr(w, "load_sponsors", lambda: w.__dict__["load_sponsors_orig"](sponsors_file))
     pushes = []
-    monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="": pushes.append((title, msg, click_url)) or True)
+    monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="", actions="": pushes.append((title, msg, click_url)) or True)
 
     batch1 = [make_job("Software Engineer", "Capital One", "2+ years experience")]
     monkeypatch.setattr(w, "scrape_all", lambda *a, **k: batch1)
@@ -204,7 +204,7 @@ def test_low_skill_match_dropped():
 
 def test_alert_message_names_resume(monkeypatch):
     sent = []
-    monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="": sent.append(msg) or True)
+    monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="", actions="": sent.append(msg) or True)
     job = make_job("Data Engineer", "Capital One", "ETL Spark Python")
     job["resume"], job["skills"] = "Data-Engineer", ["ETL", "Spark", "Python"]
     w.notify_job(job, "KNOWN", 2)
@@ -299,6 +299,48 @@ def test_merge_state_keeps_both_runs():
                               "linkedin|y": "2026-11-11T19:20:00+00:00"}}
     assert m.merge_state(base, ours)["last_searched"] == ours["last_searched"]
     assert m.merge_state({}, {})["last_searched"] == {}
+
+def test_block_buttons_and_fetch(monkeypatch, tmp_path):
+    monkeypatch.setattr(w, "NTFY_TOPIC", "t")
+    acts = w.block_actions("Robotics Technologies, LLC")
+    assert acts.count("http, ") == 2 and "body='staffing|Robotics Technologies, LLC'" in acts
+
+    class Resp:
+        text = "\n".join([
+            json.dumps({"event": "message", "message": "staffing|Robotics Technologies"}),
+            json.dumps({"event": "message", "message": "nosponsor|Acme Corp"}),
+            json.dumps({"event": "message", "message": "junk"}),
+            "not json"])
+        def raise_for_status(self): pass
+    monkeypatch.setattr(w.requests, "get", lambda *a, **k: Resp())
+    state = {}
+    w.fetch_blocks(state)
+    assert state["blocked"] == {
+        "robotics technologies": {"company": "Robotics Technologies", "reason": "staffing"},
+        "acme": {"company": "Acme Corp", "reason": "nosponsor"}}
+
+    # blocked companies are skipped in a real run
+    monkeypatch.setattr(w, "SEEN_FILE", tmp_path / "seen.json")
+    monkeypatch.setattr(w, "STATE_FILE", tmp_path / "state.json")
+    (tmp_path / "seen.json").write_text(json.dumps({"old": "2026-11-20T00:00:00+00:00"}))
+    monkeypatch.setattr(w, "load_sponsors", lambda: SPONSORS)
+    pushes = []
+    monkeypatch.setattr(w, "send_push", lambda title, msg, click_url="", priority="default", tags="", actions="": pushes.append(title) or True)
+    monkeypatch.setattr(w, "scrape_all", lambda *a, **k: [
+        make_job("Software Engineer", "Robotics Technologies LLC", "Visa sponsorship is available. 2 years experience"),
+        make_job("Java Developer", "Capital One", "2 years experience")])
+    monkeypatch.setattr("sys.argv", ["watcher.py"])
+    assert w.main() == 0
+    assert pushes == ["Java Developer"], pushes
+    assert "robotics technologies" in json.loads((tmp_path / "state.json").read_text())["blocked"]
+
+
+def test_merge_keeps_blocked_from_both():
+    import merge_state as m
+    base = {"blocked": {"a": {"company": "A", "reason": "staffing"}}}
+    ours = {"blocked": {"b": {"company": "B", "reason": "nosponsor"}}}
+    assert set(m.merge_state(base, ours)["blocked"]) == {"a", "b"}
+
 
 if __name__ == "__main__":
     import pytest
